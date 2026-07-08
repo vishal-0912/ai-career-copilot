@@ -2,6 +2,10 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+function stripJsonFences(raw) {
+  return raw.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
+}
+
 const PROFILE_EXTRACTION_PROMPT = `You are extracting a structured career profile from a resume.
 Read the resume text below and return ONLY a JSON object (no markdown, no commentary) with this exact shape:
 
@@ -32,11 +36,43 @@ async function extractCandidateProfile(resumeText) {
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const raw = message.content[0].text.trim();
-  // Strip accidental markdown code fences if the model adds them
-  const jsonText = raw.replace(/^```json\s*/i, '').replace(/```$/, '');
-
-  return JSON.parse(jsonText);
+  return JSON.parse(stripJsonFences(message.content[0].text));
 }
 
-module.exports = { extractCandidateProfile };
+const JOB_EXTRACTION_PROMPT = `You are extracting a structured job posting from raw webpage text.
+This text was scraped from a job listing page, so it will contain leftover site navigation,
+cookie banners, and other noise mixed in with the real posting — ignore all of that noise.
+
+Return ONLY a JSON object (no markdown, no commentary) with this exact shape:
+
+{
+  "title": "job title",
+  "company": "company name, or null if you truly cannot find it",
+  "location": "location, or null if not stated",
+  "salary_min": <number or null, in the currency/units as stated>,
+  "salary_max": <number or null>,
+  "jd_text": "the actual job description text: responsibilities, requirements, qualifications — preserve the real wording, don't summarize or paraphrase it away",
+  "employment_type": "e.g. Full-time, Contract, Internship, or null if not stated"
+}
+
+If the page clearly is not a job posting at all (e.g. it's a login wall, an error page, or unrelated
+content), return exactly {"error": "not a job posting"} instead of the shape above.
+
+PAGE TEXT:
+"""
+{{PAGE_TEXT}}
+"""`;
+
+async function extractJobFromText(pageText) {
+  const prompt = JOB_EXTRACTION_PROMPT.replace('{{PAGE_TEXT}}', pageText);
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 2000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return JSON.parse(stripJsonFences(message.content[0].text));
+}
+
+module.exports = { extractCandidateProfile, extractJobFromText };
