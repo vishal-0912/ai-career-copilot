@@ -1,5 +1,6 @@
--- AI Career Copilot — Day 1 schema
--- Run in Supabase SQL editor
+-- AI Career Copilot — schema
+-- Run in Supabase SQL editor. Safe to re-run in full at any point (every
+-- create is guarded with if-not-exists / drop-if-exists / or-replace).
 
 create extension if not exists vector;
 
@@ -37,12 +38,15 @@ alter table profiles enable row level security;
 alter table resumes enable row level security;
 alter table candidate_profiles enable row level security;
 
+drop policy if exists "own profile" on profiles;
 create policy "own profile" on profiles
   for all using (auth.uid() = id);
 
+drop policy if exists "own resumes" on resumes;
 create policy "own resumes" on resumes
   for all using (auth.uid() = user_id);
 
+drop policy if exists "own candidate_profiles" on candidate_profiles;
 create policy "own candidate_profiles" on candidate_profiles
   for all using (auth.uid() = user_id);
 
@@ -72,18 +76,117 @@ on conflict (id) do nothing;
 
 -- Files are stored as "<user_id>/<filename>" (see ResumeUpload.tsx), so a user
 -- may only touch objects whose first path segment matches their own auth.uid().
+drop policy if exists "resumes: owner can insert" on storage.objects;
 create policy "resumes: owner can insert"
   on storage.objects for insert to authenticated
   with check (bucket_id = 'resumes' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "resumes: owner can select" on storage.objects;
 create policy "resumes: owner can select"
   on storage.objects for select to authenticated
   using (bucket_id = 'resumes' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "generated-docs: owner can insert" on storage.objects;
 create policy "generated-docs: owner can insert"
   on storage.objects for insert to authenticated
   with check (bucket_id = 'generated-docs' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "generated-docs: owner can select" on storage.objects;
 create policy "generated-docs: owner can select"
   on storage.objects for select to authenticated
   using (bucket_id = 'generated-docs' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============================================================
+-- Day 2 additions — job feed + import
+-- ============================================================
+
+create table if not exists jobs (
+  id uuid primary key default gen_random_uuid(),
+  source text not null, -- 'adzuna' | 'jsearch' | 'import'
+  external_id text not null,
+  title text not null,
+  company text,
+  location text,
+  salary_min numeric,
+  salary_max numeric,
+  jd_text text,
+  jd_url text,
+  posted_at timestamptz,
+  raw_json jsonb,
+  embedding vector(512), -- matches voyage-3-lite; keep in sync with candidate_profiles.embedding
+  created_at timestamptz default now(),
+  unique (source, external_id)
+);
+
+create table if not exists job_matches (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  job_id uuid not null references jobs(id) on delete cascade,
+  match_percentage numeric,
+  computed_at timestamptz default now(),
+  unique (user_id, job_id)
+);
+
+create table if not exists import_queue (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  raw_url text not null,
+  status text not null default 'pending', -- pending | parsed | failed
+  error_message text,
+  created_at timestamptz default now()
+);
+
+alter table jobs enable row level security;
+alter table job_matches enable row level security;
+alter table import_queue enable row level security;
+
+-- jobs is a shared pool: any signed-in user can read it. All writes happen via
+-- the backend's service_role key (bypasses RLS), so no insert/update policy
+-- is needed here for normal app usage.
+drop policy if exists "jobs readable by authenticated users" on jobs;
+create policy "jobs readable by authenticated users" on jobs
+  for select to authenticated using (true);
+
+drop policy if exists "own job_matches" on job_matches;
+create policy "own job_matches" on job_matches
+  for all using (auth.uid() = user_id);
+
+drop policy if exists "own import_queue" on import_queue;
+create policy "own import_queue" on import_queue
+  for all using (auth.uid() = user_id);
+
+-- Ranks jobs for a given user by embedding similarity (cosine) to their most
+-- recent candidate profile. Called from the backend via supabase.rpc(...).
+-- Computed live rather than cached in job_matches — cheap at hackathon scale
+-- (hundreds of jobs), and always reflects the latest profile/job embeddings.
+create or replace function match_jobs_for_user(p_user_id uuid)
+returns table (
+  id uuid,
+  source text,
+  title text,
+  company text,
+  location text,
+  salary_min numeric,
+  salary_max numeric,
+  jd_text text,
+  jd_url text,
+  posted_at timestamptz,
+  match_percentage numeric
+)
+language sql stable
+as $$
+  select
+    j.id, j.source, j.title, j.company, j.location, j.salary_min, j.salary_max,
+    j.jd_text, j.jd_url, j.posted_at,
+    round(greatest(0, least(100, (1 - (j.embedding <=> cp.embedding)) * 100))::numeric, 1) as match_percentage
+  from jobs j
+  cross join lateral (
+    select embedding
+    from candidate_profiles
+    where user_id = p_user_id
+    order by created_at desc
+    limit 1
+  ) cp
+  where j.embedding is not null
+  order by j.embedding <=> cp.embedding asc;
+$$;

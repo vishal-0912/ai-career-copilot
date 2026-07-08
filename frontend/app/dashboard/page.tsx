@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import ResumeUpload from '@/components/ResumeUpload';
+import JobsSection from '@/components/JobsSection';
 import type { CandidateProfile } from '@/components/ProfileCard';
 
 export default async function DashboardPage() {
@@ -21,8 +22,10 @@ export default async function DashboardPage() {
     .limit(1)
     .maybeSingle();
 
+  const profile = existingProfile as CandidateProfile | null;
+
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-8">
+    <main className="mx-auto max-w-3xl space-y-8 p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Your Career Copilot</h1>
         <form action="/auth/signout" method="post">
@@ -30,10 +33,15 @@ export default async function DashboardPage() {
         </form>
       </div>
 
-      <ResumeUpload
-        userId={user.id}
-        initialProfile={existingProfile as CandidateProfile | null}
-      />
+      <ResumeUpload userId={user.id} initialProfile={profile} />
+
+      {profile ? (
+        <JobsSection userId={user.id} defaultTitle={profile.job_titles?.[0] ?? ''} />
+      ) : (
+        <p className="text-sm text-gray-500">
+          Upload a resume above to unlock your job feed and import tools.
+        </p>
+      )}
     </main>
   );
 }
