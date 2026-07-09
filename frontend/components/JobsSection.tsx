@@ -68,10 +68,22 @@ function getSourceLabel(job: FeedJob): string {
   return job.source.charAt(0).toUpperCase() + job.source.slice(1);
 }
 
+const APPLICATION_STATUS_OPTIONS = ['saved', 'applied', 'interviewing', 'offer', 'rejected'] as const;
+type ApplicationStatus = (typeof APPLICATION_STATUS_OPTIONS)[number];
+const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  saved: 'Saved',
+  applied: 'Applied',
+  interviewing: 'Interviewing',
+  offer: 'Offer',
+  rejected: 'Rejected',
+};
+
 export default function JobsSection({
   userId,
   defaultTitle,
   refreshSignal = 0,
+  applicationsRefreshSignal = 0,
+  onApplicationsChanged,
 }: {
   userId: string;
   defaultTitle: string;
@@ -79,6 +91,11 @@ export default function JobsSection({
   // match % is recomputed server-side against whichever profile is newest, this
   // just tells the component to go fetch those fresh numbers.
   refreshSignal?: number;
+  // Bump this from a sibling (e.g. the Applications table) to reload tracking
+  // statuses here without a full page refresh.
+  applicationsRefreshSignal?: number;
+  // Called after a status change made in THIS component, so the sibling stays in sync.
+  onApplicationsChanged?: () => void;
 }) {
   const [jobs, setJobs] = useState<FeedJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +124,45 @@ export default function JobsSection({
 
   function docKey(jobId: string, type: DocType) {
     return `${jobId}:${type}`;
+  }
+
+  // jobId -> tracking status, loaded from /api/applications. A job with no entry here
+  // has never been tracked.
+  const [appStatus, setAppStatus] = useState<Record<string, ApplicationStatus>>({});
+
+  async function loadApplicationStatuses() {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/applications?userId=${userId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const map: Record<string, ApplicationStatus> = {};
+      (data.applications ?? []).forEach((a: any) => {
+        if (a.job_id) map[a.job_id] = a.status;
+      });
+      setAppStatus(map);
+    } catch {
+      // Non-critical — tracking status just won't show until the next successful load.
+    }
+  }
+
+  useEffect(() => {
+    loadApplicationStatuses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicationsRefreshSignal, userId]);
+
+  async function handleStatusChange(jobId: string, status: ApplicationStatus) {
+    setAppStatus((prev) => ({ ...prev, [jobId]: status })); // optimistic
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/applications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, jobId, status }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      onApplicationsChanged?.();
+    } catch {
+      loadApplicationStatuses(); // revert to server truth
+    }
   }
 
   async function loadFeed() {
@@ -325,6 +381,24 @@ export default function JobsSection({
             <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">
               {getSourceLabel(job)}
             </p>
+
+            <div className="mt-2">
+              <label className="mr-2 text-xs text-gray-500">Track:</label>
+              <select
+                value={appStatus[job.id] ?? ''}
+                onChange={(e) => handleStatusChange(job.id, e.target.value as ApplicationStatus)}
+                className="rounded-md border px-2 py-1 text-xs"
+              >
+                <option value="" disabled>
+                  Not tracked
+                </option>
+                {APPLICATION_STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {APPLICATION_STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <button
               onClick={() => setExpanded(expanded === job.id ? null : job.id)}
