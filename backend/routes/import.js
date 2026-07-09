@@ -87,6 +87,14 @@ router.post('/jobs', async (req, res) => {
         .single();
       if (jobError) throw jobError;
 
+      // Link the job to the importing user so it shows up in THEIR feed — jobs is a
+      // shared pool (re-importing the same URL from another user updates the same row
+      // via the upsert above), but visibility is per-user via user_jobs.
+      const { error: linkError } = await supabase
+        .from('user_jobs')
+        .upsert({ user_id: userId, job_id: job.id }, { onConflict: 'user_id,job_id', ignoreDuplicates: true });
+      if (linkError) console.error('Could not link imported job to user:', linkError.message);
+
       await supabase.from('import_queue').update({ status: 'parsed' }).eq('id', queueId);
       results.push({ url, status: 'parsed', job });
     } catch (err) {
