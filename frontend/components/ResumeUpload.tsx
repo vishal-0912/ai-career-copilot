@@ -11,9 +11,11 @@ type Status = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 export default function ResumeUpload({
   userId,
   initialProfile = null,
+  onProfileUpdated,
 }: {
   userId: string;
   initialProfile?: CandidateProfile | null;
+  onProfileUpdated?: (profile: CandidateProfile) => void;
 }) {
   const supabase = createClient();
   const [status, setStatus] = useState<Status>('idle');
@@ -64,6 +66,10 @@ export default function ResumeUpload({
 
       setProfile(candidateProfile);
       setStatus('done');
+      // Tells DashboardClient a new profile exists, which bumps JobsSection's
+      // refreshSignal — every job's match % gets recomputed against this profile
+      // the next time the feed reloads, without a full page refresh.
+      onProfileUpdated?.(candidateProfile);
     } catch (err: any) {
       setError(err.message ?? 'Something went wrong');
       setStatus('error');

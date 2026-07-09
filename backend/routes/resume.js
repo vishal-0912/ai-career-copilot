@@ -21,7 +21,8 @@ router.post('/process', async (req, res) => {
     const rawText = await extractTextFromUrl(fileUrl, fileName);
     await supabase.from('resumes').update({ raw_text: rawText }).eq('id', resumeId);
 
-    // 2. Ask Claude for the structured profile
+    // 2. Ask Claude for the structured profile (now includes contact info — needed for
+    // the Day 3 resume DOCX header, not just matching)
     const profile = await extractCandidateProfile(rawText);
 
     // 3. Embed a compact representation for matching later
@@ -38,6 +39,9 @@ router.post('/process', async (req, res) => {
       .insert({
         user_id: userId,
         resume_id: resumeId,
+        full_name: profile.full_name ?? null,
+        email: profile.email ?? null,
+        phone: profile.phone ?? null,
         skills: profile.skills,
         job_titles: profile.job_titles,
         keywords: profile.keywords,

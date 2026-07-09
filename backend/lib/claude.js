@@ -10,6 +10,9 @@ const PROFILE_EXTRACTION_PROMPT = `You are extracting a structured career profil
 Read the resume text below and return ONLY a JSON object (no markdown, no commentary) with this exact shape:
 
 {
+  "full_name": "the candidate's full name as it appears on the resume, or null if not found",
+  "email": "the candidate's email address, or null if not found",
+  "phone": "the candidate's phone number as written, or null if not found",
   "summary": "one paragraph, third person, summarizing the candidate's background and strengths",
   "skills": ["skill1", "skill2", ...],
   "job_titles": ["most relevant target job titles based on their experience"],
@@ -75,4 +78,112 @@ async function extractJobFromText(pageText) {
   return JSON.parse(stripJsonFences(message.content[0].text));
 }
 
-module.exports = { extractCandidateProfile, extractJobFromText };
+const TAILOR_RESUME_PROMPT = `You are tailoring a candidate's resume for a specific job posting.
+You will rewrite/reorganize their REAL resume content to better match the job description —
+you are NOT allowed to invent employers, job titles, dates, degrees, or skills that aren't
+genuinely evidenced in their original resume. This is a hard rule: fabrication makes the
+resume dishonest and is worse than a lower ATS score.
+
+Return ONLY a JSON object (no markdown, no commentary) with this exact shape:
+
+{
+  "summary": "2-4 sentence professional summary tailored to this role, using only truthful claims",
+  "skills": ["skill1", "skill2", ...],
+  "experience": [
+    {
+      "title": "job title as held",
+      "company": "company name",
+      "dates": "e.g. Jan 2022 - Present",
+      "bullets": ["achievement/responsibility bullet, rewritten to surface relevant keywords where truthfully applicable", "..."]
+    }
+  ],
+  "education": [
+    { "degree": "degree name", "school": "school name", "dates": "e.g. 2018 - 2022" }
+  ]
+}
+
+Rules:
+- Preserve every real job, degree, and skill from the original resume — do not drop entries.
+- Where the job description uses specific terminology the candidate's real experience genuinely
+  supports (even if the original resume phrased it differently), use the JD's terminology.
+- Do not add skills, tools, or achievements that aren't backed by the original resume text.
+- Return valid JSON only.
+{{FEEDBACK_BLOCK}}
+ORIGINAL RESUME TEXT:
+"""
+{{RESUME_TEXT}}
+"""
+
+JOB TITLE: {{JD_TITLE}}
+COMPANY: {{JD_COMPANY}}
+
+JOB DESCRIPTION:
+"""
+{{JD_TEXT}}
+"""`;
+
+// feedback is an optional array of keywords the previous attempt missed — passed back in on
+// retry iterations so Claude knows specifically what to try to (truthfully) work in.
+async function tailorResumeContent({ resumeText, jdTitle, jdCompany, jdText, feedback }) {
+  const feedbackBlock = feedback?.length
+    ? `\nThe previous attempt scored below target. If any of these terms are genuinely supported by the candidate's real experience, work them in naturally. If they are NOT truthfully applicable, leave them out rather than fabricating — a lower score is fine, dishonesty is not: ${feedback.join(', ')}\n`
+    : '\n';
+
+  const prompt = TAILOR_RESUME_PROMPT.replace('{{FEEDBACK_BLOCK}}', feedbackBlock)
+    .replace('{{RESUME_TEXT}}', resumeText)
+    .replace('{{JD_TITLE}}', jdTitle || 'Not specified')
+    .replace('{{JD_COMPANY}}', jdCompany || 'Not specified')
+    .replace('{{JD_TEXT}}', jdText || '');
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 3000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return JSON.parse(stripJsonFences(message.content[0].text));
+}
+
+const COVER_LETTER_PROMPT = `Write a personalized cover letter for this candidate applying to this role.
+Return ONLY the letter body text — no JSON, no markdown, no subject line, no "Dear Hiring Manager"
+salutation or "Sincerely" sign-off (those are added separately). 3-4 paragraphs: an opening that
+names the role and company, 1-2 paragraphs connecting the candidate's real, genuine experience to
+what the job needs, and a brief closing. Do not invent experience the candidate doesn't have.
+
+CANDIDATE NAME: {{CANDIDATE_NAME}}
+CANDIDATE BACKGROUND:
+"""
+{{CANDIDATE_SUMMARY}}
+"""
+CANDIDATE SKILLS: {{CANDIDATE_SKILLS}}
+
+JOB TITLE: {{JD_TITLE}}
+COMPANY: {{JD_COMPANY}}
+JOB DESCRIPTION:
+"""
+{{JD_TEXT}}
+"""`;
+
+async function generateCoverLetterBody({ candidateName, candidateSummary, candidateSkills, jdTitle, jdCompany, jdText }) {
+  const prompt = COVER_LETTER_PROMPT.replace('{{CANDIDATE_NAME}}', candidateName || 'the candidate')
+    .replace('{{CANDIDATE_SUMMARY}}', candidateSummary || '')
+    .replace('{{CANDIDATE_SKILLS}}', (candidateSkills || []).join(', '))
+    .replace('{{JD_TITLE}}', jdTitle || 'Not specified')
+    .replace('{{JD_COMPANY}}', jdCompany || 'Not specified')
+    .replace('{{JD_TEXT}}', jdText || '');
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 1200,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return message.content[0].text.trim();
+}
+
+module.exports = {
+  extractCandidateProfile,
+  extractJobFromText,
+  tailorResumeContent,
+  generateCoverLetterBody,
+};

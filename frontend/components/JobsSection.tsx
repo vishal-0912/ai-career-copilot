@@ -21,9 +21,11 @@ type FeedJob = {
 type ImportResult = { url: string; status: 'parsed' | 'failed'; error?: string };
 
 function formatSourceResult(result: any) {
-  const parts = [`${result.saved} new`];
-  if (result.alreadyStored) parts.push(`${result.alreadyStored} already had`);
-  if (result.duplicatesSkipped) parts.push(`${result.duplicatesSkipped} duplicates skipped`);
+  // newToYourFeed / alreadyInYourFeed describe THIS user's feed, not the shared jobs
+  // pool — a job can be "new to you" even if some other user's earlier search already
+  // saved that same listing into the shared pool.
+  const parts = [`${result.newToYourFeed} new to your feed`];
+  if (result.alreadyInYourFeed) parts.push(`${result.alreadyInYourFeed} already in your feed`);
   if (result.failed) parts.push(`${result.failed} failed`);
   return `${result.fetched} fetched — ${parts.join(', ')}`;
 }
@@ -69,9 +71,14 @@ function getSourceLabel(job: FeedJob): string {
 export default function JobsSection({
   userId,
   defaultTitle,
+  refreshSignal = 0,
 }: {
   userId: string;
   defaultTitle: string;
+  // Bump this (e.g. after a new resume upload) to reload the feed — every job's
+  // match % is recomputed server-side against whichever profile is newest, this
+  // just tells the component to go fetch those fresh numbers.
+  refreshSignal?: number;
 }) {
   const [jobs, setJobs] = useState<FeedJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +94,20 @@ export default function JobsSection({
   const [importResults, setImportResults] = useState<ImportResult[] | null>(null);
 
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  type DocType = 'resume' | 'cover_letter';
+  type DocState = {
+    status: 'idle' | 'loading' | 'error';
+    error?: string;
+    atsScore?: number;
+    fileUrl?: string; // cached client-side once generated, so repeat clicks in this
+                       // session skip the network entirely rather than re-hitting Claude
+  };
+  const [docState, setDocState] = useState<Record<string, DocState>>({});
+
+  function docKey(jobId: string, type: DocType) {
+    return `${jobId}:${type}`;
+  }
 
   async function loadFeed() {
     setLoading(true);
@@ -105,8 +126,11 @@ export default function JobsSection({
 
   useEffect(() => {
     loadFeed();
+    // Reruns on mount AND whenever refreshSignal changes (e.g. a new resume was
+    // uploaded) — intentionally not narrowed to just refreshSignal so the initial
+    // load keeps working the same way it always did.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshSignal]);
 
   async function handleSearch() {
     if (!what.trim()) return;
@@ -148,6 +172,44 @@ export default function JobsSection({
       setImportResults([{ url: 'request', status: 'failed', error: 'Import request failed' }]);
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleGenerateDocument(jobId: string, type: DocType, forceRegenerate = false) {
+    const key = docKey(jobId, type);
+
+    // Already generated this session and not an explicit regenerate — just reopen it,
+    // no network call, no Claude cost. (A fresh page load still hits the backend once,
+    // which itself checks generated_documents before regenerating — see routes/documents.js.)
+    if (!forceRegenerate && docState[key]?.fileUrl) {
+      window.open(docState[key].fileUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    setDocState((prev) => ({ ...prev, [key]: { status: 'loading' } }));
+
+    try {
+      const endpoint = type === 'resume' ? 'resume' : 'cover-letter';
+      const res = await fetch(`${BACKEND_URL}/api/documents/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, jobId, regenerate: forceRegenerate }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+
+      setDocState((prev) => ({
+        ...prev,
+        [key]: { status: 'idle', atsScore: data.atsScore, fileUrl: data.fileUrl },
+      }));
+
+      // Signed Supabase Storage URL — opening it triggers a direct download/view.
+      window.open(data.fileUrl, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      setDocState((prev) => ({
+        ...prev,
+        [key]: { status: 'error', error: err.message ?? 'Generation failed' },
+      }));
     }
   }
 
@@ -274,15 +336,76 @@ export default function JobsSection({
               <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">{job.jd_text}</p>
             )}
 
-            {job.jd_url && (
-              <a
-                href={job.jd_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-block rounded-md bg-black px-4 py-2 text-sm text-white"
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {job.jd_url && (
+                <a
+                  href={job.jd_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded-md bg-black px-4 py-2 text-sm text-white"
+                >
+                  Apply
+                </a>
+              )}
+
+              <button
+                onClick={() => handleGenerateDocument(job.id, 'resume')}
+                disabled={docState[docKey(job.id, 'resume')]?.status === 'loading'}
+                className="inline-block rounded-md border px-4 py-2 text-sm disabled:opacity-50"
               >
-                Apply
-              </a>
+                {docState[docKey(job.id, 'resume')]?.status === 'loading'
+                  ? 'Tailoring resume…'
+                  : 'Download Resume'}
+              </button>
+
+              {docState[docKey(job.id, 'resume')]?.fileUrl && (
+                <button
+                  onClick={() => handleGenerateDocument(job.id, 'resume', true)}
+                  disabled={docState[docKey(job.id, 'resume')]?.status === 'loading'}
+                  className="text-xs text-gray-500 underline disabled:opacity-50"
+                  title="Generate a fresh tailored resume instead of reusing the saved one"
+                >
+                  Regenerate
+                </button>
+              )}
+
+              <button
+                onClick={() => handleGenerateDocument(job.id, 'cover_letter')}
+                disabled={docState[docKey(job.id, 'cover_letter')]?.status === 'loading'}
+                className="inline-block rounded-md border px-4 py-2 text-sm disabled:opacity-50"
+              >
+                {docState[docKey(job.id, 'cover_letter')]?.status === 'loading'
+                  ? 'Writing letter…'
+                  : 'Download Cover Letter'}
+              </button>
+
+              {docState[docKey(job.id, 'cover_letter')]?.fileUrl && (
+                <button
+                  onClick={() => handleGenerateDocument(job.id, 'cover_letter', true)}
+                  disabled={docState[docKey(job.id, 'cover_letter')]?.status === 'loading'}
+                  className="text-xs text-gray-500 underline disabled:opacity-50"
+                  title="Generate a fresh cover letter instead of reusing the saved one"
+                >
+                  Regenerate
+                </button>
+              )}
+            </div>
+
+            {docState[docKey(job.id, 'resume')]?.status === 'idle' &&
+              docState[docKey(job.id, 'resume')]?.atsScore != null && (
+                <p className="mt-1 text-xs text-green-700">
+                  Tailored resume ATS score: {docState[docKey(job.id, 'resume')]?.atsScore}%
+                </p>
+              )}
+            {docState[docKey(job.id, 'resume')]?.status === 'error' && (
+              <p className="mt-1 text-xs text-red-600">
+                Resume generation failed — {docState[docKey(job.id, 'resume')]?.error}
+              </p>
+            )}
+            {docState[docKey(job.id, 'cover_letter')]?.status === 'error' && (
+              <p className="mt-1 text-xs text-red-600">
+                Cover letter generation failed — {docState[docKey(job.id, 'cover_letter')]?.error}
+              </p>
             )}
           </div>
         ))}

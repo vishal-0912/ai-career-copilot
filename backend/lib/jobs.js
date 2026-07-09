@@ -26,31 +26,37 @@ function dedupKey(title, company) {
 //   2. Loose match on normalized title+company — the same posting showing up via a different
 //      source (e.g. a LinkedIn job appearing in both Adzuna and JSearch results).
 // Returns a breakdown rather than just a count, so the caller can show the user what actually
-// happened instead of a single opaque number.
+// happened instead of a single opaque number. Also returns matchedJobIds — every job id (newly
+// saved OR already existing) that showed up in THIS search, whether or not it required a new
+// embedding — so the caller can link them to the requesting user's feed (jobs is a shared pool
+// for dedup purposes, but a job should only appear in a user's feed if that user actually
+// searched for or imported it).
 async function upsertJobsWithEmbeddings(jobs) {
   const { data: existing, error: fetchError } = await supabase
     .from('jobs')
-    .select('source, external_id, title, company');
+    .select('id, source, external_id, title, company');
   if (fetchError) {
     console.error('Could not load existing jobs for dedup check:', fetchError.message);
   }
 
-  const seenSourceKeys = new Set((existing || []).map((j) => sourceKey(j.source, j.external_id)));
-  const seenDedupKeys = new Set((existing || []).map((j) => dedupKey(j.title, j.company)));
+  const sourceKeyToId = new Map((existing || []).map((j) => [sourceKey(j.source, j.external_id), j.id]));
+  const dedupKeyToId = new Map((existing || []).map((j) => [dedupKey(j.title, j.company), j.id]));
 
-  const result = { saved: [], alreadyStored: 0, duplicatesSkipped: 0, failed: 0 };
+  const result = { saved: [], alreadyStored: 0, duplicatesSkipped: 0, failed: 0, matchedJobIds: [] };
 
   for (const job of jobs) {
     const srcKey = sourceKey(job.source, job.external_id);
     const dKey = dedupKey(job.title, job.company);
 
-    if (seenSourceKeys.has(srcKey)) {
+    if (sourceKeyToId.has(srcKey)) {
       result.alreadyStored++;
+      result.matchedJobIds.push(sourceKeyToId.get(srcKey));
       continue; // already have this exact listing from this exact source — nothing to do
     }
 
-    if (seenDedupKeys.has(dKey)) {
+    if (dedupKeyToId.has(dKey)) {
       result.duplicatesSkipped++;
+      result.matchedJobIds.push(dedupKeyToId.get(dKey));
       console.log(
         `Skipping likely duplicate — "${job.title}" at "${job.company}" already exists from another source (new: ${job.source}/${job.external_id})`
       );
@@ -72,11 +78,12 @@ async function upsertJobsWithEmbeddings(jobs) {
 
       if (error) throw error;
       result.saved.push(data);
+      result.matchedJobIds.push(data.id);
 
       // Track within this batch too, so duplicates across sources within the SAME
       // refresh call (not just across separate calls) are also caught.
-      seenSourceKeys.add(srcKey);
-      seenDedupKeys.add(dKey);
+      sourceKeyToId.set(srcKey, data.id);
+      dedupKeyToId.set(dKey, data.id);
     } catch (err) {
       console.error(`Failed to save job (${job.source}/${job.external_id}):`, err.message);
       result.failed++;

@@ -190,3 +190,89 @@ as $$
   where j.embedding is not null
   order by j.embedding <=> cp.embedding asc;
 $$;
+
+-- ============================================================
+-- Day 3 additions — tailored resume + cover letter generation
+-- ============================================================
+
+-- Contact info wasn't captured on Day 1 (only summary/skills/titles/keywords),
+-- but the resume DOCX header needs it. Nullable + backfilled going forward —
+-- existing rows just won't have these until the user re-uploads.
+alter table candidate_profiles add column if not exists full_name text;
+alter table candidate_profiles add column if not exists email text;
+alter table candidate_profiles add column if not exists phone text;
+
+create table if not exists generated_documents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  job_id uuid references jobs(id) on delete cascade,
+  type text not null, -- 'resume' | 'cover_letter'
+  file_url text not null, -- storage path, not a signed URL (those expire)
+  ats_score numeric, -- null for cover letters, which aren't ATS-scored
+  iteration_count integer,
+  created_at timestamptz default now()
+);
+
+alter table generated_documents enable row level security;
+
+drop policy if exists "own generated_documents" on generated_documents;
+create policy "own generated_documents" on generated_documents
+  for all using (auth.uid() = user_id);
+
+-- ============================================================
+-- Fix — per-user job visibility
+-- ============================================================
+-- jobs stays a shared pool (dedup + embedding cost stay low across users
+-- searching similar roles), but each user's feed should only ever show jobs
+-- THEY fetched (via refresh) or imported — not the whole shared pool.
+-- user_jobs is the linking table that records that.
+
+create table if not exists user_jobs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  job_id uuid not null references jobs(id) on delete cascade,
+  created_at timestamptz default now(),
+  unique (user_id, job_id)
+);
+
+alter table user_jobs enable row level security;
+
+drop policy if exists "own user_jobs" on user_jobs;
+create policy "own user_jobs" on user_jobs
+  for all using (auth.uid() = user_id);
+
+-- Redefine to only rank jobs this user has actually fetched or imported
+-- (previously ranked the ENTIRE shared jobs pool for every user — the bug
+-- this fixes: users were seeing jobs other users had fetched/imported).
+create or replace function match_jobs_for_user(p_user_id uuid)
+returns table (
+  id uuid,
+  source text,
+  title text,
+  company text,
+  location text,
+  salary_min numeric,
+  salary_max numeric,
+  jd_text text,
+  jd_url text,
+  posted_at timestamptz,
+  match_percentage numeric
+)
+language sql stable
+as $$
+  select
+    j.id, j.source, j.title, j.company, j.location, j.salary_min, j.salary_max,
+    j.jd_text, j.jd_url, j.posted_at,
+    round(greatest(0, least(100, (1 - (j.embedding <=> cp.embedding)) * 100))::numeric, 1) as match_percentage
+  from jobs j
+  join user_jobs uj on uj.job_id = j.id and uj.user_id = p_user_id
+  cross join lateral (
+    select embedding
+    from candidate_profiles
+    where user_id = p_user_id
+    order by created_at desc
+    limit 1
+  ) cp
+  where j.embedding is not null
+  order by j.embedding <=> cp.embedding asc;
+$$;

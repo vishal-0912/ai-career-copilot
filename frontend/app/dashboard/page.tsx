@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import ResumeUpload from '@/components/ResumeUpload';
-import JobsSection from '@/components/JobsSection';
+import DashboardClient from '@/components/DashboardClient';
 import type { CandidateProfile } from '@/components/ProfileCard';
 
 export default async function DashboardPage() {
@@ -33,15 +32,7 @@ export default async function DashboardPage() {
         </form>
       </div>
 
-      <ResumeUpload userId={user.id} initialProfile={profile} />
-
-      {profile ? (
-        <JobsSection userId={user.id} defaultTitle={profile.job_titles?.[0] ?? ''} />
-      ) : (
-        <p className="text-sm text-gray-500">
-          Upload a resume above to unlock your job feed and import tools.
-        </p>
-      )}
+      <DashboardClient userId={user.id} initialProfile={profile} />
     </main>
   );
 }
