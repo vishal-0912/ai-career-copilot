@@ -24,12 +24,16 @@ export default function LoginPage() {
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password });
 
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       setError(error.message);
       return;
     }
+
+    // Deliberately NOT calling setLoading(false) here — this component is about to
+    // unmount as we navigate to the dashboard. Clearing loading first would flash the
+    // button back to "Log in"/"Sign up" for a moment before the navigation lands,
+    // which looked like the action had silently failed and then randomly succeeded.
     router.push('/dashboard');
     router.refresh();
   }
@@ -39,6 +43,16 @@ export default function LoginPage() {
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
+  }
+
+  // Switching between Log in / Sign up starts the other form fresh — carrying over
+  // a failed login's email/password (and its error message) into the sign-up form
+  // is confusing, especially since the fields look identical.
+  function toggleMode() {
+    setMode((m) => (m === 'signin' ? 'signup' : 'signin'));
+    setEmail('');
+    setPassword('');
+    setError(null);
   }
 
   return (
@@ -83,7 +97,7 @@ export default function LoginPage() {
         </button>
 
         <button
-          onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
+          onClick={toggleMode}
           className="w-full text-sm text-gray-500 underline"
         >
           {mode === 'signin'

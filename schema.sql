@@ -276,3 +276,27 @@ as $$
   where j.embedding is not null
   order by j.embedding <=> cp.embedding asc;
 $$;
+
+-- ============================================================
+-- Day 4 additions — application tracking
+-- ============================================================
+
+create table if not exists applications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  job_id uuid not null references jobs(id) on delete cascade,
+  status text not null default 'saved', -- saved | applied | interviewing | offer | rejected
+  resume_document_id uuid references generated_documents(id) on delete set null,
+  cover_letter_document_id uuid references generated_documents(id) on delete set null,
+  notes text,
+  applied_at timestamptz, -- set the first time status moves to 'applied' or beyond
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (user_id, job_id)
+);
+
+alter table applications enable row level security;
+
+drop policy if exists "own applications" on applications;
+create policy "own applications" on applications
+  for all using (auth.uid() = user_id);
