@@ -23,16 +23,5 @@ export default async function DashboardPage() {
 
   const profile = existingProfile as CandidateProfile | null;
 
-  return (
-    <main className="mx-auto max-w-3xl space-y-8 p-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Your Career Copilot</h1>
-        <form action="/auth/signout" method="post">
-          <button className="text-sm text-gray-500 underline">Log out</button>
-        </form>
-      </div>
-
-      <DashboardClient userId={user.id} initialProfile={profile} />
-    </main>
-  );
+  return <DashboardClient userId={user.id} initialProfile={profile} />;
 }

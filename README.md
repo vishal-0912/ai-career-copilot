@@ -87,6 +87,9 @@ frontend/
     JobsSection.tsx            # search/refresh, import by URL, job feed, document buttons
     ApplicationsSection.tsx    # "My Applications" tracking table
     ProfileCard.tsx
+    MatchRing.tsx               # per-job match % ring shown on each job card
+    StatusStepper.tsx           # Saved/Applied/Interviewing/Offer stepper control
+    Toast.tsx                   # global toast notification provider
   lib/supabase/              # browser + server Supabase clients
 backend/
   index.js                   # Express app, mounts all routes
