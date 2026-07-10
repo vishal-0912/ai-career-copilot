@@ -1,11 +1,12 @@
 const cheerio = require('cheerio');
 
 // Fetches a URL and returns cleaned, boilerplate-stripped body text for the LLM to parse.
-// Works well for plain server-rendered pages (most company careers pages). LinkedIn and
-// Naukri listing pages are heavily JS-rendered and/or bot-protected, so a plain fetch may
-// return a near-empty shell for those — if that becomes a blocker, swap this for a headless
-// browser (Playwright) call instead; nothing else in the pipeline needs to change since
-// callers just get back a string either way.
+// Works well for plain server-rendered pages (most company careers pages, and standard
+// LinkedIn /jobs/view/ pages — LinkedIn server-renders enough JD text for SEO that a plain
+// fetch picks it up fine). Some listing pages (Naukri, LinkedIn search/collection views,
+// bot-protected pages) are more heavily JS-rendered and may return a near-empty shell — if
+// that becomes a blocker, swap this for a headless browser (Playwright) call instead;
+// nothing else in the pipeline needs to change since callers just get back a string either way.
 async function fetchPageText(url) {
   const res = await fetch(url, {
     headers: {

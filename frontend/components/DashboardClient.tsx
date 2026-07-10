@@ -6,12 +6,19 @@ import ResumeUpload from './ResumeUpload';
 import { ToastProvider } from './Toast';
 import type { CandidateProfile } from './ProfileCard';
 
+// Shown while a code-split section's chunk is still loading — without this, next/dynamic
+// renders nothing at all, which reads as a blank/broken pane for the ~200ms-1s it takes to
+// fetch the chunk (worse on a slow connection or the very first tab switch after page load).
+function SectionLoading() {
+  return <p className="text-sm text-[#8A7A5E]">Loading…</p>;
+}
+
 // Only one of these three sections is ever visible at a time (tab switch), so
 // JobsSection and ApplicationsSection are code-split out of the initial dashboard
 // bundle and fetched on demand the first time a user opens that tab. ResumeUpload
 // stays a static import since it's the default/first-visible section.
-const JobsSection = dynamic(() => import('./JobsSection'));
-const ApplicationsSection = dynamic(() => import('./ApplicationsSection'));
+const JobsSection = dynamic(() => import('./JobsSection'), { loading: SectionLoading });
+const ApplicationsSection = dynamic(() => import('./ApplicationsSection'), { loading: SectionLoading });
 
 type Section = 'profile' | 'jobs' | 'applications';
 

@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { apiErrorMessage } from '@/lib/apiError';
 import ProfileCard, { CandidateProfile } from './ProfileCard';
 import { useToast } from './Toast';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL!; // Render service URL
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // matches the "up to 5MB" copy below the dropzone
 
 type Status = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -26,6 +28,13 @@ export default function ResumeUpload({
 
   async function handleFile(file: File) {
     setError(null);
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setError(`File is ${(file.size / (1024 * 1024)).toFixed(1)}MB — the limit is 5MB`);
+      setStatus('error');
+      return;
+    }
+
     setStatus('uploading');
 
     try {
@@ -63,7 +72,7 @@ export default function ResumeUpload({
         }),
       });
 
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const { candidateProfile } = await res.json();
 
       setProfile(candidateProfile);

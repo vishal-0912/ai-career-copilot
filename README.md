@@ -90,7 +90,10 @@ frontend/
     MatchRing.tsx               # per-job match % ring shown on each job card
     StatusStepper.tsx           # Saved/Applied/Interviewing/Offer stepper control
     Toast.tsx                   # global toast notification provider
-  lib/supabase/              # browser + server Supabase clients
+  lib/
+    supabase/                  # browser + server Supabase clients
+    apiError.ts                 # parses the backend's {error} JSON into a clean message,
+                                 # instead of surfacing the raw response body to the user
 backend/
   index.js                   # Express app, mounts all routes
   routes/

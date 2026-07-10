@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiErrorMessage } from '@/lib/apiError';
 import StatusStepper, { statusLabel, type TrackedStatus } from './StatusStepper';
 import { useToast } from './Toast';
 
@@ -56,7 +57,7 @@ export default function ApplicationsSection({
     setError(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/applications?userId=${userId}`);
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
       setApplications(data.applications ?? []);
     } catch (err: any) {
@@ -84,7 +85,7 @@ export default function ApplicationsSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, status }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       onChanged?.();
       pushToast(`Marked as ${statusLabel(status)}`);
     } catch {
@@ -102,7 +103,7 @@ export default function ApplicationsSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, jobId }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
       window.open(data.fileUrl, '_blank', 'noopener,noreferrer');
     } catch (err: any) {
