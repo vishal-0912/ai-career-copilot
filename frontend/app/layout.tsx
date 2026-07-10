@@ -4,13 +4,13 @@ import { Source_Serif_4, Public_Sans, IBM_Plex_Mono } from 'next/font/google';
 
 const sourceSerif = Source_Serif_4({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '600'],
   variable: '--font-serif',
 });
 
 const publicSans = Public_Sans({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600'],
   variable: '--font-sans',
 });
 
@@ -23,6 +23,11 @@ const plexMono = IBM_Plex_Mono({
 export const metadata = {
   title: 'AI Career Copilot',
   description: 'Upload a resume, get an AI career profile, apply smarter.',
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
