@@ -4,6 +4,7 @@ const { fetchPageText } = require('../lib/scrape');
 const { extractJobFromText } = require('../lib/claude');
 const { embedText } = require('../lib/embeddings');
 const { supabase } = require('../lib/supabase');
+const { dedupKey, sourceKey } = require('../lib/jobs');
 
 const router = express.Router();
 
@@ -34,6 +35,18 @@ router.post('/jobs', async (req, res) => {
     return res.status(400).json({ error: 'No valid URLs found in input' });
   }
 
+  // Same two-layer dedup as lib/jobs.js#upsertJobsWithEmbeddings, so importing a URL for a
+  // job that's already in the shared pool (fetched earlier via Adzuna/JSearch, or imported
+  // before) links to that existing row instead of creating a duplicate card in the feed.
+  const { data: existingJobs, error: existingJobsError } = await supabase
+    .from('jobs')
+    .select('id, source, external_id, title, company');
+  if (existingJobsError) {
+    console.error('Could not load existing jobs for import dedup:', existingJobsError.message);
+  }
+  const sourceKeyToId = new Map((existingJobs || []).map((j) => [sourceKey(j.source, j.external_id), j.id]));
+  const dedupKeyToId = new Map((existingJobs || []).map((j) => [dedupKey(j.title, j.company), j.id]));
+
   const results = [];
 
   for (const url of urlList) {
@@ -54,38 +67,59 @@ router.post('/jobs', async (req, res) => {
       if (parsed.error) throw new Error(parsed.error);
       if (!parsed.title) throw new Error('Could not identify a job title on this page');
 
-      const embeddingInput = [parsed.title, parsed.company, parsed.jd_text]
-        .filter(Boolean)
-        .join('\n')
-        .slice(0, 8000);
-      const embedding = await embedText(embeddingInput);
-
       // Imported jobs don't have a natural external_id like Adzuna does, so we
       // derive a stable one from the URL itself — re-importing the same URL
       // updates the existing row instead of creating a duplicate.
       const externalId = crypto.createHash('sha256').update(url).digest('hex').slice(0, 40);
+      const srcKey = sourceKey('import', externalId);
+      const dKey = dedupKey(parsed.title, parsed.company);
 
-      const { data: job, error: jobError } = await supabase
-        .from('jobs')
-        .upsert(
-          {
-            source: 'import',
-            external_id: externalId,
-            title: parsed.title,
-            company: parsed.company,
-            location: parsed.location,
-            salary_min: parsed.salary_min,
-            salary_max: parsed.salary_max,
-            jd_text: parsed.jd_text,
-            jd_url: url,
-            raw_json: parsed,
-            embedding,
-          },
-          { onConflict: 'source,external_id' }
-        )
-        .select()
-        .single();
-      if (jobError) throw jobError;
+      let job;
+      if (!sourceKeyToId.has(srcKey) && dedupKeyToId.has(dKey)) {
+        // Same posting already exists under a different source (or a different URL) —
+        // link to that existing job instead of embedding + inserting a duplicate.
+        const { data: existingJob, error: fetchError } = await supabase
+          .from('jobs')
+          .select()
+          .eq('id', dedupKeyToId.get(dKey))
+          .single();
+        if (fetchError) throw fetchError;
+        job = existingJob;
+      } else {
+        const embeddingInput = [parsed.title, parsed.company, parsed.jd_text]
+          .filter(Boolean)
+          .join('\n')
+          .slice(0, 8000);
+        const embedding = await embedText(embeddingInput);
+
+        const { data: upsertedJob, error: jobError } = await supabase
+          .from('jobs')
+          .upsert(
+            {
+              source: 'import',
+              external_id: externalId,
+              title: parsed.title,
+              company: parsed.company,
+              location: parsed.location,
+              salary_min: parsed.salary_min,
+              salary_max: parsed.salary_max,
+              jd_text: parsed.jd_text,
+              jd_url: url,
+              raw_json: parsed,
+              embedding,
+            },
+            { onConflict: 'source,external_id' }
+          )
+          .select()
+          .single();
+        if (jobError) throw jobError;
+        job = upsertedJob;
+
+        // Track within this batch too, so multiple URLs in the same paste that turn out
+        // to be the same posting also dedupe against each other, not just against the DB.
+        sourceKeyToId.set(srcKey, job.id);
+        dedupKeyToId.set(dKey, job.id);
+      }
 
       // Link the job to the importing user so it shows up in THEIR feed — jobs is a
       // shared pool (re-importing the same URL from another user updates the same row

@@ -93,4 +93,4 @@ async function upsertJobsWithEmbeddings(jobs) {
   return result;
 }
 
-module.exports = { upsertJobsWithEmbeddings };
+module.exports = { upsertJobsWithEmbeddings, dedupKey, sourceKey };

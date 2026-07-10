@@ -8,6 +8,9 @@ function matchInfo(pct: number) {
   if (pct >= 80) {
     color = '#5E7F4C';
     label = 'Strong match';
+  } else if (pct < 40) {
+    color = '#A6997C';
+    label = 'Poor match';
   } else if (pct < 60) {
     color = '#8A7A5E';
     label = 'Fair match';

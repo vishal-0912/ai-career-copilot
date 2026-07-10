@@ -45,7 +45,7 @@ export default function StatusStepper({
             title={stage.label}
             onClick={() => onSetStatus(stage.key)}
             className={`${dotSize} cursor-pointer rounded-full border-none p-0`}
-            style={{ background: status === 'rejected' ? INACTIVE : i <= idx ? STATUS_COLORS[stage.key] : INACTIVE }}
+            style={{ background: status === 'rejected' ? STATUS_COLORS.rejected : i <= idx ? STATUS_COLORS[stage.key] : INACTIVE }}
           />
           {i < STATUS_STAGES.length - 1 && (
             <div className={`${lineSize} h-0.5 bg-[rgba(78,34,15,0.15)]`} />

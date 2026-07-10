@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiErrorMessage } from '@/lib/apiError';
 import MatchRing from './MatchRing';
 import StatusStepper, { statusLabel, type TrackedStatus } from './StatusStepper';
 import { useToast } from './Toast';
@@ -166,7 +167,7 @@ export default function JobsSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, jobId, status }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       onApplicationsChanged?.();
       pushToast(`Marked as ${statusLabel(status)}`);
     } catch {
@@ -179,7 +180,7 @@ export default function JobsSection({
     setFeedError(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/jobs/feed?userId=${userId}`);
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
       setJobs(data.jobs ?? []);
     } catch (err: any) {
@@ -209,7 +210,7 @@ export default function JobsSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, what, where }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
       setSourceStatus(data.sources ?? null);
       await loadFeed();
@@ -264,7 +265,7 @@ export default function JobsSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, jobId, regenerate: forceRegenerate }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
 
       setDocState((prev) => ({

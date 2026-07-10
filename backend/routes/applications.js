@@ -4,6 +4,10 @@ const { supabase } = require('../lib/supabase');
 const router = express.Router();
 
 const VALID_STATUSES = ['saved', 'applied', 'interviewing', 'offer', 'rejected'];
+// Only these represent the candidate actually having applied — 'rejected' can be reached
+// directly from an untracked/saved job (e.g. "not interested"), which shouldn't backdate
+// an "Applied" date that never happened.
+const APPLIED_STATUSES = ['applied', 'interviewing', 'offer'];
 
 // Finds the most recently generated document of a given type for this user+job, if any —
 // so tracking an application auto-links whichever tailored resume/cover letter was last
@@ -50,7 +54,7 @@ router.post('/', async (req, res) => {
     if (existingError) throw new Error(`Could not check existing application: ${existingError.message}`);
 
     const appliedAt =
-      existing?.applied_at ?? (nextStatus !== 'saved' ? new Date().toISOString() : null);
+      existing?.applied_at ?? (APPLIED_STATUSES.includes(nextStatus) ? new Date().toISOString() : null);
 
     const [resumeDocumentId, coverLetterDocumentId] = await Promise.all([
       findLatestDocumentId(userId, jobId, 'resume'),
@@ -128,7 +132,7 @@ router.patch('/:id', async (req, res) => {
   try {
     const { data: existing, error: existingError } = await supabase
       .from('applications')
-      .select('id, applied_at')
+      .select('id, job_id, applied_at')
       .eq('id', id)
       .eq('user_id', userId)
       .maybeSingle();
@@ -138,9 +142,19 @@ router.patch('/:id', async (req, res) => {
     const update = { updated_at: new Date().toISOString() };
     if (status) {
       update.status = status;
-      if (!existing.applied_at && status !== 'saved') {
+      if (!existing.applied_at && APPLIED_STATUSES.includes(status)) {
         update.applied_at = new Date().toISOString();
       }
+
+      // Re-derive document links on every status change, same as the POST handler —
+      // otherwise a resume/cover letter generated after this application already existed
+      // never gets picked up when the status is only ever changed from this tab.
+      const [resumeDocumentId, coverLetterDocumentId] = await Promise.all([
+        findLatestDocumentId(userId, existing.job_id, 'resume'),
+        findLatestDocumentId(userId, existing.job_id, 'cover_letter'),
+      ]);
+      update.resume_document_id = resumeDocumentId;
+      update.cover_letter_document_id = coverLetterDocumentId;
     }
     if (notes !== undefined) update.notes = notes;
 

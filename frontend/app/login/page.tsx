@@ -61,7 +61,14 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col sm:flex-row">
-      <div className="flex min-w-0 flex-1 flex-col justify-between gap-10 bg-[#4E220F] p-14 text-[#F7F1DE]">
+      <Link
+        href="/"
+        className="font-serif text-xl font-semibold no-underline text-[#4E220F] px-5 pt-6 sm:hidden"
+      >
+        Career Copilot
+      </Link>
+
+      <div className="hidden min-w-0 flex-1 flex-col justify-between gap-10 bg-[#4E220F] p-10 text-[#F7F1DE] sm:flex lg:p-14">
         <Link href="/" className="font-serif text-xl font-semibold no-underline">
           Career Copilot
         </Link>
@@ -69,14 +76,14 @@ export default function LoginPage() {
           <div className="mb-[22px] font-mono text-xs uppercase tracking-[0.12em] text-[#D8B08C]">
             Since 2026
           </div>
-          <p className="max-w-[440px] font-serif text-[34px] leading-[1.3]">
+          <p className="max-w-[440px] font-serif text-[26px] leading-[1.3] lg:text-[34px]">
             Built for the job search you&rsquo;d actually want to spend less time on.
           </p>
         </div>
         <div className="text-[13px] text-[#C9A480]">Resume in, tailored applications out.</div>
       </div>
 
-      <div className="flex flex-1 items-center justify-center bg-[#F7F1DE] p-10">
+      <div className="flex flex-1 items-start justify-center bg-[#F7F1DE] px-5 pb-8 pt-10 sm:items-center sm:p-10">
         <div className="w-full max-w-[360px]">
           <div className="mb-[30px] flex gap-7 border-b border-[rgba(78,34,15,0.2)]">
             <button

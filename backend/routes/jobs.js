@@ -42,10 +42,14 @@ router.post('/refresh', async (req, res) => {
   // Mutates linkedJobIds as it goes, so if the same job is matched by both sources in this
   // same refresh (e.g. an Adzuna listing that JSearch's loose dedup also matches), it's only
   // counted as "new to your feed" once, under whichever source reported it first.
+  // De-dupes matchedJobIds itself before tallying — a single source's own raw results can
+  // contain repeat/near-duplicate listings that collapse to the same job id (e.g. a bulk
+  // recruiter reposting the same title), which would otherwise inflate "already in your
+  // feed" on even a brand-new account's very first search.
   function tallyForUser(matchedJobIds) {
     let newToYourFeed = 0;
     let alreadyInYourFeed = 0;
-    for (const id of matchedJobIds) {
+    for (const id of new Set(matchedJobIds)) {
       if (linkedJobIds.has(id)) {
         alreadyInYourFeed++;
       } else {
