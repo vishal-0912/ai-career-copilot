@@ -9,6 +9,8 @@ through a simple status pipeline (Saved → Applied → Interviewing → Offer /
 Built as a 4-day solo hackathon project. Frontend on Vercel, backend on Render, Supabase
 for auth/database/storage.
 
+**Live app:** [ai-career-copilot-omega-dusky.vercel.app](https://ai-career-copilot-omega-dusky.vercel.app/)
+
 ## Features
 
 - **Auth** — email/password and Google OAuth via Supabase Auth
