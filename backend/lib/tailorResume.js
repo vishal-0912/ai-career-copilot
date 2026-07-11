@@ -8,7 +8,7 @@ const MAX_ITERATIONS = 3;
 // deterministic scorer (which just wants text) can grade it the same way it
 // would grade any resume.
 function flattenResumeText(resume) {
-  const parts = [resume.summary, (resume.skills || []).join(', ')];
+  const parts = [resume.headline, resume.summary, (resume.skills || []).join(', ')];
 
   for (const job of resume.experience || []) {
     parts.push(`${job.title || ''} ${job.company || ''} ${job.dates || ''}`);
@@ -18,6 +18,19 @@ function flattenResumeText(resume) {
   parts.push('Experience'); // the section headers themselves live in the DOCX template,
   parts.push('Education');  // not in this JSON — add them so formattingScore() can see them
   parts.push('Skills');
+
+  // Projects/certifications carry real, truthful keyword surface too (see claude.js prompt) —
+  // they need to count toward the score or the tailoring loop has no incentive to keep them.
+  if (resume.projects?.length) parts.push('Projects');
+  for (const project of resume.projects || []) {
+    parts.push(`${project.name || ''} ${project.context || ''}`);
+    parts.push(...(project.bullets || []));
+  }
+
+  if (resume.certifications?.length) {
+    parts.push('Certifications');
+    parts.push(resume.certifications.join(', '));
+  }
 
   for (const edu of resume.education || []) {
     parts.push(`${edu.degree || ''} ${edu.school || ''} ${edu.dates || ''}`);

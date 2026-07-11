@@ -72,6 +72,7 @@ const SECTION_HEADERS = [
   /\b(work\s+)?experience\b/i,
   /\beducation\b/i,
   /\bskills\b/i,
+  /\bprojects\b/i,
 ];
 
 function formattingScore(resumeText) {
