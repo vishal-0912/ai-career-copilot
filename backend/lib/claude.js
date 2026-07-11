@@ -80,13 +80,14 @@ async function extractJobFromText(pageText) {
 
 const TAILOR_RESUME_PROMPT = `You are tailoring a candidate's resume for a specific job posting.
 You will rewrite/reorganize their REAL resume content to better match the job description —
-you are NOT allowed to invent employers, job titles, dates, degrees, or skills that aren't
-genuinely evidenced in their original resume. This is a hard rule: fabrication makes the
-resume dishonest and is worse than a lower ATS score.
+you are NOT allowed to invent employers, job titles, dates, degrees, projects, certifications,
+or skills that aren't genuinely evidenced in their original resume. This is a hard rule:
+fabrication makes the resume dishonest and is worse than a lower ATS score.
 
 Return ONLY a JSON object (no markdown, no commentary) with this exact shape:
 
 {
+  "headline": "a one-line professional title for the top of the resume, e.g. 'Frontend Engineer | React.js | Next.js | TypeScript' — see headline rules below",
   "summary": "2-4 sentence professional summary tailored to this role, using only truthful claims",
   "skills": ["skill1", "skill2", ...],
   "experience": [
@@ -97,16 +98,43 @@ Return ONLY a JSON object (no markdown, no commentary) with this exact shape:
       "bullets": ["achievement/responsibility bullet, rewritten to surface relevant keywords where truthfully applicable", "..."]
     }
   ],
+  "projects": [
+    {
+      "name": "project name, exactly as in the original resume",
+      "context": "short context line, e.g. 'Company Internal Tool | React.js, Axios, REST APIs' — omit if the original doesn't state one",
+      "bullets": ["project bullet, rewritten to surface relevant keywords where truthfully applicable", "..."]
+    }
+  ],
+  "certifications": ["certification name exactly as in the original resume, ..."],
   "education": [
     { "degree": "degree name", "school": "school name", "dates": "e.g. 2018 - 2022" }
   ]
 }
 
+Headline rules (this is a distinct, required field — do not fold it into summary or skip it):
+- The headline is the job-title line that sits directly under the candidate's name. Real ATS
+  systems and recruiters weight this line heavily, so it must not be left out.
+- Base it on the JOB TITLE below, rewritten only as far as the candidate's real, evidenced
+  experience genuinely supports it. If the candidate has truly done this job (even under a
+  slightly different internal title), it is honest to present the headline in the JD's own
+  terminology — that is normal, expected resume practice, not fabrication.
+- If the JD's title is not honestly supported by the candidate's real background, use the closest
+  truthful title from their actual experience instead of the JD's title verbatim.
+- Never invent seniority, a specialization, or domain experience the resume doesn't evidence.
+
 Rules:
-- Preserve every real job, degree, and skill from the original resume — do not drop entries.
+- Preserve every real job, degree, skill, project, and certification from the original resume —
+  do not drop entries. If the original resume lists projects or certifications, they MUST appear
+  in the "projects" / "certifications" fields above — never silently omit them.
+- For each real project, rewrite its bullets (not just restate them) to surface relevant,
+  truthful keywords from the job description — projects are a legitimate place to add ATS
+  keyword coverage without touching the experience section.
 - Where the job description uses specific terminology the candidate's real experience genuinely
   supports (even if the original resume phrased it differently), use the JD's terminology.
-- Do not add skills, tools, or achievements that aren't backed by the original resume text.
+- Do not add skills, tools, achievements, projects, or certifications that aren't backed by the
+  original resume text.
+- If the original resume has no projects or no certifications, return an empty array for that
+  field rather than inventing any.
 - Return valid JSON only.
 {{FEEDBACK_BLOCK}}
 ORIGINAL RESUME TEXT:

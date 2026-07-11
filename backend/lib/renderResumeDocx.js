@@ -19,7 +19,8 @@ function bulletParagraph(text) {
   });
 }
 
-// resume: the structured JSON from tailorResumeContent() — { summary, skills, experience, education }
+// resume: the structured JSON from tailorResumeContent() —
+//   { headline, summary, skills, experience, projects, certifications, education }
 // contact: { fullName, email, phone } from the candidate's profile
 async function renderResumeDocx(resume, contact) {
   const children = [];
@@ -30,6 +31,17 @@ async function renderResumeDocx(resume, contact) {
       spacing: { after: 60 },
     })
   );
+
+  // Headline (job title line) sits directly under the name, matching standard resume format —
+  // this is what recruiters and ATS title-matching look at first, so it can't be missing.
+  if (resume.headline) {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: resume.headline, bold: true, size: 22 })],
+        spacing: { after: 60 },
+      })
+    );
+  }
 
   const contactLine = [contact.email, contact.phone].filter(Boolean).join('  |  ');
   if (contactLine) {
@@ -77,6 +89,32 @@ async function renderResumeDocx(resume, contact) {
     }
   }
 
+  // Projects — preserved from the original resume (never dropped) and placed right after
+  // Experience, matching standard resume order. Their rewritten bullets are a legitimate
+  // extra surface for JD keywords without touching the (truthful, unembellished) job history.
+  if (resume.projects?.length) {
+    children.push(sectionHeading('Projects'));
+    for (const project of resume.projects) {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: project.name || '', bold: true })],
+          spacing: { before: 120 },
+        })
+      );
+      if (project.context) {
+        children.push(
+          new Paragraph({
+            children: [new TextRun({ text: project.context, italics: true, size: 20, color: '555555' })],
+            spacing: { after: 60 },
+          })
+        );
+      }
+      for (const bullet of project.bullets || []) {
+        children.push(bulletParagraph(bullet));
+      }
+    }
+  }
+
   if (resume.education?.length) {
     children.push(sectionHeading('Education'));
     for (const edu of resume.education) {
@@ -90,6 +128,14 @@ async function renderResumeDocx(resume, contact) {
           spacing: { after: 60 },
         })
       );
+    }
+  }
+
+  // Certifications — preserved from the original resume if present; never dropped.
+  if (resume.certifications?.length) {
+    children.push(sectionHeading('Certifications'));
+    for (const cert of resume.certifications) {
+      children.push(bulletParagraph(cert));
     }
   }
 
